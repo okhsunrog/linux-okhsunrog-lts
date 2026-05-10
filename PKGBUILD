@@ -199,10 +199,16 @@ source=(
     "0001-drm-i915-Add-modparam-for-rc6.patch"
     "0001-drm-xe-Add-modparam-for-rc6.patch")
 
+b2sums=('f550d65a7c885a16f350a5c2bb01a6f5d9af11ef621f935d61185203da2b519c876a35afdfe254989cd3c7c4eee7641b5c48281fde2ac78080901f796daa1ec8'
+        '81fafd3adcaf3b690d8d4791693e68c7ae921d103ebfd70e8d0ae15cd05ecde5e6672ae43c3a7875686d883c1f5b82d2c8b37b40aee8dcb0563913f9dd6469b6'
+        '84023166d86e51210e9fa2f99c3cce243ceade0a6b3d53041ce0ee72a91371af9732ad6701c4ccfa631680eef222536ad873d0f01ca4207bdb6e8b4f38af4043'
+        '9d4490c39326546ee881d690a431d4c07d3efba6b1ea5f21bedc935165b87286433202d2814e0d4c167938fa8f775d21635931fa720aa90feddfffa69be8cd70')
+
 # LLVM makedepends
 if _is_lto_kernel; then
     makedepends+=(clang llvm lld)
     source+=("${_patchsource}/misc/dkms-clang.patch")
+    b2sums+=('SKIP')
     BUILD_FLAGS=(
         CC=clang
         LD=ld.lld
@@ -220,28 +226,35 @@ fi
 if [ "$_build_zfs" = "yes" ]; then
     makedepends+=(git)
     source+=("git+https://github.com/cachyos/zfs.git#commit=1c702dda346a59e05cfd3029569bbb1d5d91c54b")
+    b2sums+=('SKIP')
 fi
 
 
 if [ "$_build_nvidia_open" = "yes" ]; then
     source+=("https://download.nvidia.com/XFree86/${_nv_open_pkg%"-$_nv_ver"}/${_nv_open_pkg}.tar.xz"
              "${_patchsource}/misc/nvidia/0002-Add-IBT-support.patch")
+    b2sums+=('SKIP' 'SKIP')
 fi
 
 if [ "$_build_r8125" = "yes" ]; then
     source+=("git+https://github.com/aravance/r8125.git")
+    b2sums+=('SKIP')
 fi
 
 ## List of CachyOS schedulers
 case "$_cpusched" in
     bore|rt-bore|hardened) # CachyOS Scheduler (BORE)
-        source+=("${_patchsource}/sched/0001-bore-cachy.patch");;&
+        source+=("${_patchsource}/sched/0001-bore-cachy.patch")
+        b2sums+=('SKIP');;&
     bmq) ## Project C Scheduler
-        source+=("${_patchsource}/sched/0001-prjc-cachy.patch");;
+        source+=("${_patchsource}/sched/0001-prjc-cachy.patch")
+        b2sums+=('SKIP');;
     hardened) ## Hardened Patches
-        source+=("${_patchsource}/misc/0001-hardened.patch");;
+        source+=("${_patchsource}/misc/0001-hardened.patch")
+        b2sums+=('SKIP');;
     rt|rt-bore) ## RT patches
-        source+=("${_patchsource}/misc/0001-rt-i915.patch");;
+        source+=("${_patchsource}/misc/0001-rt-i915.patch")
+        b2sums+=('SKIP');;
 esac
 
 export KBUILD_BUILD_HOST=okhsunrog
@@ -752,7 +765,6 @@ for _p in "${pkgname[@]}"; do
     }"
 done
 
-b2sums=('f550d65a7c885a16f350a5c2bb01a6f5d9af11ef621f935d61185203da2b519c876a35afdfe254989cd3c7c4eee7641b5c48281fde2ac78080901f796daa1ec8'
-        '81fafd3adcaf3b690d8d4791693e68c7ae921d103ebfd70e8d0ae15cd05ecde5e6672ae43c3a7875686d883c1f5b82d2c8b37b40aee8dcb0563913f9dd6469b6'
-        '84023166d86e51210e9fa2f99c3cce243ceade0a6b3d53041ce0ee72a91371af9732ad6701c4ccfa631680eef222536ad873d0f01ca4207bdb6e8b4f38af4043'
-        '9d4490c39326546ee881d690a431d4c07d3efba6b1ea5f21bedc935165b87286433202d2814e0d4c167938fa8f775d21635931fa720aa90feddfffa69be8cd70')
+# b2sums declared in source[] block above — placed early so that conditional
+# b2sums+=('SKIP') for optional sources (LTO patch, ZFS, NVIDIA, r8125, sched
+# patches) takes effect. Moving this back to the bottom would clobber them.
