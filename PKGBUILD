@@ -149,7 +149,7 @@ fi
 
 pkgbase="linux-$_pkgsuffix"
 _major=6.18
-_minor=28
+_minor=38
 #_minorc=$((_minor+1))
 #_rcver=rc8
 pkgver=${_major}.${_minor}
@@ -199,7 +199,7 @@ source=(
     "0001-drm-i915-Add-modparam-for-rc6.patch"
     "0001-drm-xe-Add-modparam-for-rc6.patch")
 
-b2sums=('f550d65a7c885a16f350a5c2bb01a6f5d9af11ef621f935d61185203da2b519c876a35afdfe254989cd3c7c4eee7641b5c48281fde2ac78080901f796daa1ec8'
+b2sums=('3190e413e6f5ed2a01afb29f4fae7522bfaa3fd8defd2e0be1458eac2828cc97d395a3f3617860c55a8d016f3181878c31ca6ecc031e3e3390ca0316bbabfc73'
         '81fafd3adcaf3b690d8d4791693e68c7ae921d103ebfd70e8d0ae15cd05ecde5e6672ae43c3a7875686d883c1f5b82d2c8b37b40aee8dcb0563913f9dd6469b6'
         '84023166d86e51210e9fa2f99c3cce243ceade0a6b3d53041ce0ee72a91371af9732ad6701c4ccfa631680eef222536ad873d0f01ca4207bdb6e8b4f38af4043'
         '9d4490c39326546ee881d690a431d4c07d3efba6b1ea5f21bedc935165b87286433202d2814e0d4c167938fa8f775d21635931fa720aa90feddfffa69be8cd70')
@@ -225,7 +225,7 @@ fi
 # ZFS support
 if [ "$_build_zfs" = "yes" ]; then
     makedepends+=(git)
-    source+=("git+https://github.com/cachyos/zfs.git#commit=1c702dda346a59e05cfd3029569bbb1d5d91c54b")
+    source+=("git+https://github.com/cachyos/zfs.git#commit=c681af76c5a6a15caada25eb13090e41218c7831")
     b2sums+=('SKIP')
 fi
 
