@@ -85,6 +85,10 @@
 # - "generic" (kernel's default - to share the package between machines with different CPU µarch as long as they are x86-64)
 : "${_processor_opt:=}"
 
+# Compiler used for C/assembly parts of the kernel - options are "llvm" or "gcc".
+# Rust code is always compiled by rustc; LLVM is the best-supported Rust-for-Linux setup.
+: "${_compiler:=llvm}"
+
 # Clang LTO mode, only available with the "llvm" compiler - options are "none", "full" or "thin".
 # ATTENTION - one of three predefined values should be selected!
 # "full: uses 1 thread for Linking, slow and uses more memory, theoretically with the highest performance gains."
@@ -134,6 +138,11 @@ _is_lto_kernel() {
     return $?
 }
 
+_is_llvm_kernel() {
+    [[ "$_compiler" = "llvm" ]]
+    return $?
+}
+
 _is_ci_build() {
     [[ -n "$CI" || -n "$GITHUB_RUN_ID" ]]
     return $?
@@ -141,7 +150,7 @@ _is_ci_build() {
 
 if _is_lto_kernel && [ "$_use_lto_suffix" = "yes"  ]; then
     _pkgsuffix="okhsunrog-lts-lto"
-elif ! _is_lto_kernel && [ "$_use_gcc_suffix" = "yes" ]; then
+elif ! _is_llvm_kernel && [ "$_use_gcc_suffix" = "yes" ]; then
     _pkgsuffix="okhsunrog-lts-gcc"
 else
     _pkgsuffix="okhsunrog-lts"
@@ -154,7 +163,7 @@ _minor=38
 #_rcver=rc8
 pkgver=${_major}.${_minor}
 _tagrel=1
-pkgrel=1
+pkgrel=2
 _stable=${_major}.${_minor}
 #_stable=${_major}
 #_stablerc=${_major}-${_rcver}
@@ -204,8 +213,9 @@ b2sums=('3190e413e6f5ed2a01afb29f4fae7522bfaa3fd8defd2e0be1458eac2828cc97d395a3f
         '84023166d86e51210e9fa2f99c3cce243ceade0a6b3d53041ce0ee72a91371af9732ad6701c4ccfa631680eef222536ad873d0f01ca4207bdb6e8b4f38af4043'
         '9d4490c39326546ee881d690a431d4c07d3efba6b1ea5f21bedc935165b87286433202d2814e0d4c167938fa8f775d21635931fa720aa90feddfffa69be8cd70')
 
-# LLVM makedepends
-if _is_lto_kernel; then
+# LLVM toolchain and the out-of-tree module compatibility patch are needed
+# independently of whether whole-kernel LTO is enabled.
+if _is_llvm_kernel; then
     makedepends+=(clang llvm lld)
     source+=("${_patchsource}/misc/dkms-clang.patch")
     b2sums+=('SKIP')
@@ -265,6 +275,10 @@ _die() { error "$@" ; exit 1; }
 
 prepare() {
     cd "$_srcname"
+
+    if _is_lto_kernel && ! _is_llvm_kernel; then
+        _die "LLVM LTO requires _compiler=llvm"
+    fi
 
     echo "Setting version..."
     echo "-$pkgrel" > localversion.10-pkgrel
@@ -336,8 +350,15 @@ prepare() {
 
     echo "Selecting '$_use_llvm_lto' LLVM level..."
 
+    # Daily-driver Rust module development profile. Keep runtime assertions and
+    # heavyweight test/debug facilities for the separate QEMU development build.
+    scripts/config -e RUST -e RUST_OVERFLOW_CHECKS -d RUST_DEBUG_ASSERTIONS \
+        -e MODULES -e MODULE_UNLOAD -d MODVERSIONS \
+        -e DEBUG_INFO_DWARF5 -e DEBUG_INFO_BTF -e DEBUG_INFO_BTF_MODULES -e GDB_SCRIPTS \
+        -d KUNIT -d SAMPLES -d KASAN -d KCSAN -d UBSAN -d PROVE_LOCKING
+
     if ! _is_lto_kernel; then
-        echo "Enabling QR Code Panic for GCC Kernels"
+        echo "Enabling QR Code Panic for non-LTO kernels"
         scripts/config --set-str DRM_PANIC_SCREEN qr_code -e DRM_PANIC_SCREEN_QR_CODE \
             --set-str DRM_PANIC_SCREEN_QR_CODE_URL https://panic.archlinux.org/panic_report# \
             --set-val CONFIG_DRM_PANIC_SCREEN_QR_VERSION 40
@@ -463,6 +484,13 @@ prepare() {
     yes "" | make "${BUILD_FLAGS[@]}" config >/dev/null
     diff -u ../config .config || :
 
+    local required_config
+    for required_config in CONFIG_RUST=y CONFIG_LTO_NONE=y CONFIG_DEBUG_INFO_BTF=y \
+        CONFIG_DEBUG_INFO_BTF_MODULES=y; do
+        grep -qx "$required_config" .config ||
+            _die "Required Rust development setting was disabled: $required_config"
+    done
+
     ### Prepared version
     make -s kernelrelease > version
     echo "Prepared $pkgbase version $(<version)"
@@ -489,7 +517,7 @@ _sign_modules() {
     local sign_cert="${srcdir}/${_srcname}/certs/signing_key.x509"
     local hash_algo="$(grep -Po 'CONFIG_MODULE_SIG_HASH="\K[^"]*' "${srcdir}/${_srcname}/.config")"
 
-    if [ "$_use_llvm_lto" != "none" ]; then
+    if _is_llvm_kernel; then
         local strip_bin="llvm-strip"
     else
         local strip_bin="strip"
@@ -525,7 +553,7 @@ build() {
         cd ${srcdir}/"zfs"
 
         local CONFIGURE_FLAGS=()
-        [ "$_use_llvm_lto" != "none" ] && CONFIGURE_FLAGS+=("KERNEL_LLVM=1")
+        _is_llvm_kernel && CONFIGURE_FLAGS+=("KERNEL_LLVM=1")
 
         ./autogen.sh
         sed -i "s|\$(uname -r)|${_kernuname}|g" configure
@@ -584,7 +612,15 @@ _package-headers() {
       zlib
       zstd
      "${pkgbase}")
+    optdepends=('rust: compiler for external Rust modules'
+      'rust-src: Rust core library sources required by the kernel build system'
+      'rust-bindgen: generate kernel C bindings for Rust'
+      'rust-analyzer: language-server support for Rust kernel modules')
     provides=(LINUX-HEADERS)
+
+    if _is_llvm_kernel; then
+        depends+=(clang llvm lld)
+    fi
 
     cd "${_srcname}"
     local builddir="$pkgdir/usr/lib/modules/$(<version)/build"
@@ -632,14 +668,11 @@ _package-headers() {
     echo "Installing KConfig files..."
     find . -name 'Kconfig*' -exec install -Dm644 {} "$builddir/{}" \;
 
-    # Install .rmeta files if they exist
-    if compgen -G "rust/*.rmeta" 1>/dev/null; then
-        install -Dt "$builddir/rust" -m644 rust/*.rmeta
-    fi
-
-    # Install .so files if they exist
-    if compgen -G "rust/*.so" 1>/dev/null; then
-        install -Dt "$builddir/rust" rust/*.so
+    # External Rust modules need the prebuilt crate metadata. rust-analyzer also
+    # needs the Rust Makefile, sources and generated command metadata.
+    if grep -qx 'CONFIG_RUST=y' .config; then
+        [[ -s rust/libkernel.rmeta ]] || _die "Rust metadata was not built"
+        cp -t "$builddir" -a rust
     fi
 
     echo "Installing unstripped VDSO..."
